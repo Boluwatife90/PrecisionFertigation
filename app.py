@@ -29,6 +29,7 @@ MODEL_FEATURE_ORDER = [
 ]
 
 def standardize_input(raw_values):
+    """Standardize input features using training set statistics"""
     standardized = []
     for i, val in enumerate(raw_values):
         if TRAIN_STD[i] == 0:
@@ -38,6 +39,7 @@ def standardize_input(raw_values):
     return standardized
 
 def calculate_npk_rates(soil_n, soil_p, soil_k, crop_type="tomato", crop_age_days=60):
+    """Calculate NPK requirements with proper handling of excess nutrients"""
     # ✅ NO TRAILING SPACES IN DICTIONARY KEYS
     crop_targets = {
         "tomato": {
@@ -59,10 +61,12 @@ def calculate_npk_rates(soil_n, soil_p, soil_k, crop_type="tomato", crop_age_day
     root_depth = 0.3
     conversion_factor = 10
     
+    # Calculate difference (can be negative if excess)
     n_diff = (targets["N"] - soil_n) * bulk_density * root_depth * conversion_factor
     p_diff = (targets["P"] - soil_p) * bulk_density * root_depth * conversion_factor
     k_diff = (targets["K"] - soil_k) * bulk_density * root_depth * conversion_factor
     
+    # Separate deficit and excess
     n_deficit = max(0, n_diff)
     p_deficit = max(0, p_diff)
     k_deficit = max(0, k_diff)
@@ -70,10 +74,12 @@ def calculate_npk_rates(soil_n, soil_p, soil_k, crop_type="tomato", crop_age_day
     p_excess = max(0, -p_diff)
     k_excess = max(0, -k_diff)
     
+    # Calculate fertilizer needs only if deficient
     n_required = n_deficit / 0.60 if n_deficit > 0 else 0
     p_required = p_deficit / 0.30 if p_deficit > 0 else 0
     k_required = k_deficit / 0.70 if k_deficit > 0 else 0
     
+    # Convert to fertilizer products
     p2o5_required = p_required * 2.29 if p_required > 0 else 0
     k2o_required = k_required * 1.20 if k_required > 0 else 0
     
@@ -88,6 +94,7 @@ def calculate_npk_rates(soil_n, soil_p, soil_k, crop_type="tomato", crop_age_day
     
     mop_needed = k2o_required / 0.60 if k2o_required > 0 else 0
     
+    # Determine if fertigation is needed
     needs_fertigation = (n_deficit > 10 or p_deficit > 5 or k_deficit > 50)
     has_excess = (n_excess > 50 or p_excess > 20 or k_excess > 100)
     
@@ -143,6 +150,7 @@ def predict():
             result['fertilizer_breakdown'] = npk_rates
         except Exception as npk_error:
             print(f"⚠️ NPK calculation warning: {npk_error}")
+            traceback.print_exc()
         
         return jsonify(result)
 
