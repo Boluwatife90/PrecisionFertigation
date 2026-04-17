@@ -124,6 +124,7 @@ def calculate_npk_rates(soil_n, soil_p, soil_k, crop_type="tomato", crop_age_day
         }
     }
 
+# 🔗 MAIN PREDICTION ENDPOINT
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
@@ -131,7 +132,7 @@ def predict():
         if not payload:
             return jsonify({"error": "No JSON payload provided"}), 400
 
-        # ✅ This now works because keys match exactly
+        # Extract raw values in model order
         raw_values = [float(payload.get(feat, 0)) for feat in MODEL_FEATURE_ORDER]
         std_values = standardize_input(raw_values)
         std_payload = dict(zip(MODEL_FEATURE_ORDER, std_values))
@@ -157,6 +158,111 @@ def predict():
     except Exception as e:
         error_msg = f"Prediction failed: {str(e)}"
         print(f"❌ Prediction error: {error_msg}")
+        traceback.print_exc()
+        return jsonify({"error": error_msg}), 500
+
+# 🧪 TEST ENDPOINT - Returns sample prediction for frontend testing
+@app.route('/test', methods=['GET', 'POST'])
+def test_prediction():
+    """Test endpoint that returns sample prediction data without calling ML model"""
+    sample_response = {
+        "need_label": 1,
+        "need_proba": 0.92,
+        "rate_pred": 77.4,
+        "timing": "Apply within 48-72 hours",
+        "confidence": 92,
+        "expert": {
+            "base": {
+                "ts_pred_soil_moisture": 18.5,
+                "base_rate_raw": 75.2,
+                "base_need_proba": 0.89
+            }
+        },
+        "fertilizer_breakdown": {
+            "urea_kg_ha": 274.0,
+            "dap_kg_ha": 698.0,
+            "mop_kg_ha": 720.0,
+            "total_n_kg_ha": 315.0,
+            "total_p2o5_kg_ha": 321.0,
+            "total_k2o_kg_ha": 864.0,
+            "needs_fertigation": True,
+            "has_excess": False,
+            "deficiency_details": {
+                "n_deficit_kg_ha": 189.0,
+                "p_deficit_kg_ha": 42.0,
+                "k_deficit_kg_ha": 504.0,
+                "n_excess_kg_ha": 0,
+                "p_excess_kg_ha": 0,
+                "k_excess_kg_ha": 0,
+                "target_levels": {"N": 50, "P": 20, "K": 200},
+                "current_levels": {"N": 5, "P": 10, "K": 80},
+                "status": {
+                    "N": "DEFICIENT",
+                    "P": "DEFICIENT", 
+                    "K": "DEFICIENT"
+                }
+            }
+        },
+        "message": "This is a TEST response. Connect your ML model for real predictions."
+    }
+    return jsonify(sample_response), 200
+
+# 🏥 HEALTH CHECK ENDPOINT - For Render monitoring
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for monitoring service status"""
+    return jsonify({
+        "status": "healthy",
+        "service": "precision-fertigation-api",
+        "endpoints": ["/predict", "/test", "/health"],
+        "timestamp": np.datetime64('now').astype(str)
+    }), 200
+
+# 🔄 SUGGEST IMPROVEMENTS ENDPOINT (Optional - for confidence optimization)
+@app.route('/suggest-improvements', methods=['POST'])
+def suggest_improvements():
+    """Analyzes current inputs and suggests changes to maximize confidence"""
+    try:
+        payload = request.json
+        if not payload:
+            return jsonify({"error": "No JSON payload provided"}), 400
+            
+        current_features = [float(payload.get(f, 0)) for f in MODEL_FEATURE_ORDER]
+        
+        # Get current prediction
+        std_current = standardize_input(current_features)
+        std_payload = dict(zip(MODEL_FEATURE_ORDER, std_current))
+        current_result = predict_with_experts(std_payload, need_threshold=0.45)
+        current_confidence = current_result.get('need_proba', 0.5)
+        
+        # For testing: return simple suggestions without optimization
+        suggestions = [
+            {
+                "feature": "Soil Moisture",
+                "current": round(current_features[0], 2),
+                "suggested": round(current_features[0] * 0.8, 2),
+                "change": "↓ decrease by " + str(round(current_features[0] * 0.2, 2)),
+                "impact": "high"
+            },
+            {
+                "feature": "N (mg/kg)",
+                "current": round(current_features[2], 2),
+                "suggested": round(current_features[2] * 0.9, 2),
+                "change": "↓ decrease by " + str(round(current_features[2] * 0.1, 2)),
+                "impact": "medium"
+            }
+        ]
+        
+        return jsonify({
+            "current_confidence": round(current_confidence * 100, 1),
+            "achievable_confidence": min(99.9, round(current_confidence * 100 + 10, 1)),
+            "suggestions": suggestions[:5],
+            "optimal_inputs": dict(zip(MODEL_FEATURE_ORDER, [round(v * 0.95, 2) for v in current_features]))
+        })
+        
+    except Exception as e:
+        error_msg = f"Suggestion generation failed: {str(e)}"
+        print(f"❌ Suggestion error: {error_msg}")
         traceback.print_exc()
         return jsonify({"error": error_msg}), 500
 
