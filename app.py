@@ -1,7 +1,7 @@
 # -- coding: utf-8 --
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from phase3_predict_corrected_shimmed import predict_with_experts
+from phase3_predict import predict_with_experts
 import traceback
 import numpy as np
 from scipy.optimize import differential_evolution
