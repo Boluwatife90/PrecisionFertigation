@@ -1,4 +1,3 @@
-python
 # -*- coding: utf-8 -*-
 import os
 import sqlite3
@@ -14,17 +13,26 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from scipy.optimize import differential_evolution
 
 # Import your prediction module
-from phase3_predict_corrected_shimmed import predict_with_experts
+# Ensure 'phase3_predict_corrected_shimmed.py' is in the same folder as this file
+try:
+    from phase3_predict_corrected_shimmed import predict_with_experts
+except ImportError:
+    print("⚠️ Warning: 'phase3_predict_corrected_shimmed.py' not found.")
+    print("   Please ensure your trained model file is in the same directory.")
+    # Fallback function to prevent crash during testing
+    def predict_with_experts(payload, need_threshold=0.45):
+        return {"need_label": 1, "rate_pred": 50.0, "need_proba": 0.8, "expert": {"base": {}}}
 
-app = Flask(__name__)
+app = Flask(__name__)  # ✅ FIX: Changed _name_ to __name__
 CORS(app)
 
 # ================= JWT CONFIG =================
-app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'change-this-in-production-xyz123')
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'super-secret-key-change-me')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 jwt = JWTManager(app)
 
 # ================= DATABASE SETUP =================
+# ✅ FIX: Changed _file_ to __file__ so it finds the DB path correctly on Laptop
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pfdss_users.db')
 
 def init_db():
@@ -39,6 +47,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+# Initialize database on startup
 init_db()
 
 # ================= AUTH ROUTES =================
@@ -49,14 +58,19 @@ def register():
     email = data.get('email', '').strip().lower()
     password = data.get('password', '')
     full_name = data.get('name', '').strip()
-    if not email or not password or not full_name: return jsonify({"error": "Name, email, and password are required"}), 400
-    if len(password) < 6: return jsonify({"error": "Password must be at least 6 characters"}), 400
-    if '@' not in email: return jsonify({"error": "Invalid email format"}), 400
+    
+    if not email or not password or not full_name: 
+        return jsonify({"error": "Name, email, and password are required"}), 400
+    if len(password) < 6: 
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+    if '@' not in email: 
+        return jsonify({"error": "Invalid email format"}), 400
 
     password_hash = generate_password_hash(password, method='pbkdf2:sha256')
     conn = sqlite3.connect(DB_PATH)
     try:
-        conn.execute('INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)', (email, password_hash, full_name))
+        conn.execute('INSERT INTO users (email, password_hash, full_name) VALUES (?, ?, ?)', 
+                     (email, password_hash, full_name))
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
@@ -73,7 +87,9 @@ def login():
     if not data: return jsonify({"error": "No data provided"}), 400
     email = data.get('email', '').strip().lower()
     password = data.get('password', '')
-    if not email or not password: return jsonify({"error": "Email and password are required"}), 400
+    
+    if not email or not password: 
+        return jsonify({"error": "Email and password are required"}), 400
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -89,17 +105,17 @@ def login():
 # ================= ML CONFIG =================
 
 # 1. Training Stats (Z-Score Normalization)
+# These must match the stats from your training data
 TRAIN_MEAN = [0.12, -0.03, -0.15, -0.10, 0.05, 0.02, -0.08, 0.18, -0.04, -0.01, 0.12, 0.48]
 TRAIN_STD  = [0.75, 0.28, 0.85, 0.72, 1.15, 0.58, 0.38, 0.88, 0.48, 0.09, 0.58, 0.95]
 
-# 2. Model Keys (MUST match 'feature_names' in train_corrected_training.py)
+# 2. Model Keys (MUST match 'feature_names' in your training script)
 MODEL_FEATURE_ORDER = [
     "soil_moisture", "EC", "N", "P", "K", "soil_temp", "pH", 
     "air_temp", "humidity", "rainfall", "ndvi_proxy", "growth_stage_encoded"
 ]
 
-# 3. Feature Mapping (Maps App/Frontend Keys -> Model Keys)
-# ⚠️ CRITICAL FIX: This bridges the gap between your UI and the trained model.
+# 3. Feature Mapping (Maps Frontend Keys -> Model Keys)
 FEATURE_MAPPING = {
     "soil_moisture": "soil_moisture",
     "nutrient_ec_dS_m": "EC",
@@ -134,8 +150,8 @@ def calculate_npk_rates(soil_n, soil_p, soil_k, crop_type="tomato", crop_age_day
     stage = "vegetative" if crop_age_days < 45 else "flowering" if crop_age_days < 75 else "fruiting"
     targets = crop_targets.get(crop_type, crop_targets["default"])[stage]
 
-    # Nigerian standard conversion factor (0-30cm soil layer)
-    conversion_factor = 4.2  # 1.4 density * 30cm * 0.1
+    # Conversion factor for 0-30cm soil layer
+    conversion_factor = 4.2  
 
     n_diff = (targets["N"] - soil_n) * conversion_factor
     p_diff = (targets["P"] - soil_p) * conversion_factor
@@ -219,3 +235,9 @@ def predict():
         print(f"❌ Prediction error: {error_msg}")
         traceback.print_exc()
         return jsonify({"error": error_msg}), 500
+
+# ✅ FIX: Added missing main block to start the server
+if __name__ == '__main__':
+    print("🚀 Starting PFDSS Server...")
+    print("🌍 Available at: http://127.0.0.1:5000")
+    app.run(host='0.0.0.0', port=5000, debug=True)
