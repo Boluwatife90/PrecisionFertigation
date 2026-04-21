@@ -13,7 +13,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from scipy.optimize import differential_evolution
 
 # Import your prediction module (ensure filename matches exactly)
-from phase3_predict_corrected_shimmed import predict_with_experts
+from phase3_predict import predict_with_experts
 
 app = Flask(__name__)
 CORS(app)
